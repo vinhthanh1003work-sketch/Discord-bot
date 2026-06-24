@@ -19,9 +19,8 @@ module.exports = {
 
   async execute(interaction) {
     const container = new ContainerBuilder()
-
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('# 🎟️ Carry Services\nNeed a carry? Open a ticket for your game below!\n\n**Available Games:**\n🌸 Anime Vanguards\n🗼 Universal Tower Defense X\n⚔️ Anime Squadron')
+        new TextDisplayBuilder().setContent('# 🎟️ Carry Services\nNeed a carry? Open a ticket for your game below!\n\n🌸 **Anime Vanguards**\n🗼 **Universal Tower Defense X**\n⚔️ **Anime Squadron**')
       )
       .addSeparatorComponents(
         new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)

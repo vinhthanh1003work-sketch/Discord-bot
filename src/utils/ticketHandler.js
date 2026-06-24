@@ -9,84 +9,135 @@ const {
   ChannelType,
   PermissionFlagsBits,
   MessageFlags,
+  AttachmentBuilder,
 } = require('discord.js');
 const db = require('./db');
 require('dotenv').config();
 
 const GAMES = {
-  ticket_create_av:   { name: 'Anime Vanguards',           emoji: '🌸', color: 0xFF69B4 },
-  ticket_create_utdx: { name: 'Universal Tower Defense X', emoji: '🗼', color: 0x00BFFF },
-  ticket_create_as:   { name: 'Anime Squadron',            emoji: '⚔️', color: 0xFF4500 },
+  ticket_create_av:   { name: 'Anime Vanguards',           short: 'AV',   emoji: '🌸', roleEnv: 'AV_CARRIER_ROLE_ID'   },
+  ticket_create_utdx: { name: 'Universal Tower Defense X', short: 'UTDX', emoji: '🗼', roleEnv: 'UTDX_CARRIER_ROLE_ID' },
+  ticket_create_as:   { name: 'Anime Squadron',            short: 'AS',   emoji: '⚔️', roleEnv: 'AS_CARRIER_ROLE_ID'   },
 };
+
+// Generate a 4-character alphanumeric code
+function genCode() {
+  return Math.random().toString(36).substring(2, 6).toUpperCase();
+}
+
+// Check if member has any carrier role
+function isCarrier(member) {
+  const roles = [
+    process.env.AV_CARRIER_ROLE_ID,
+    process.env.UTDX_CARRIER_ROLE_ID,
+    process.env.AS_CARRIER_ROLE_ID,
+  ].filter(Boolean);
+  return roles.some(r => member.roles.cache.has(r));
+}
 
 async function handleTicketButtons(interaction, client) {
   const { customId, guild, member } = interaction;
 
+  // ── CREATE TICKET ─────────────────────────────────────────────
   if (customId.startsWith('ticket_create_')) {
     const game = GAMES[customId];
     if (!game) return;
 
+    // Defer fast — this is what stops the "thinking" timeout
     await interaction.deferReply({ flags: 64 });
 
-    const existing = guild.channels.cache.find(
-      c => c.topic?.includes(`owner:${member.id}`) && c.topic?.includes('carry-ticket')
-    );
-    if (existing) {
-      return interaction.editReply({ content: `❌ You already have an open ticket: ${existing}` });
+    // Check for existing open ticket
+    const allTickets = db.getAll('tickets');
+    const existingId = Object.entries(allTickets).find(
+      ([, t]) => t.ownerId === member.id && t.open
+    )?.[0];
+
+    if (existingId) {
+      const existingChannel = guild.channels.cache.get(existingId);
+      return interaction.editReply({
+        content: existingChannel
+          ? `❌ You already have an open ticket: ${existingChannel}`
+          : '❌ You already have an open ticket.',
+      });
+    }
+
+    const code = genCode();
+    const safeName = member.user.username.toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 12) || 'user';
+    const channelName = `${game.short}-${safeName}-${code}`.toLowerCase();
+
+    // Get the per-game carrier role
+    const carrierRoleId = (process.env[game.roleEnv] || '').trim();
+    const pingMsg = carrierRoleId ? `<@&${carrierRoleId}>` : '@here';
+
+    // Build permission overwrites
+    const overwrites = [
+      { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ];
+    if (carrierRoleId) {
+      overwrites.push({
+        id: carrierRoleId,
+        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+      });
     }
 
     const ticketChannel = await guild.channels.create({
-      name: `ticket-${member.user.username.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      name: channelName,
       type: ChannelType.GuildText,
-      topic: `carry-ticket | owner:${member.id} | game:${game.name}`,
-      parent: process.env.TICKETS_CATEGORY_ID || null,
-      permissionOverwrites: [
-        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-        { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-      ],
+      parent: (process.env.TICKETS_CATEGORY_ID || '').trim() || null,
+      permissionOverwrites: overwrites,
     });
 
     db.set('tickets', ticketChannel.id, {
       ownerId: member.id,
       game: game.name,
+      short: game.short,
       carrierId: null,
       vouchedUsers: [],
+      open: true,
       createdAt: Date.now(),
+      messages: [],
     });
 
-    const carriersRoleId = process.env.CARRIERS_ROLE_ID;
-    const pingMsg = carriersRoleId ? `<@&${carriersRoleId}>` : '@here';
-
     const container = new ContainerBuilder()
-
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`# ${game.emoji} ${game.name} Carry Ticket\nWelcome ${member}! A carrier will be with you shortly.\n\n**Game:** ${game.emoji} ${game.name}\n**Status:** 🟡 Waiting for carrier\n\nPlease describe what carry you need below.`)
+        new TextDisplayBuilder().setContent(
+          `# ${game.emoji} ${game.name} Carry Ticket\n` +
+          `Welcome ${member}! A carrier will be with you shortly.\n\n` +
+          `**Game:** ${game.emoji} ${game.name}\n` +
+          `**Ticket:** \`${channelName}\`\n` +
+          `**Status:** 🟡 Waiting for carrier\n\n` +
+          `Please describe what carry you need below.`
+        )
       )
-      .addSeparatorComponents(
-        new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
-      )
+      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
       .addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`ticket_claim_${ticketChannel.id}`)
-            .setLabel('Claim Ticket')
+            .setLabel('Claim')
             .setEmoji('✅')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
-            .setCustomId(`ticket_close_${ticketChannel.id}`)
-            .setLabel('Close Ticket')
-            .setEmoji('🗑️')
-            .setStyle(ButtonStyle.Danger),
+            .setCustomId(`ticket_transcript_${ticketChannel.id}`)
+            .setLabel('Transcript')
+            .setEmoji('📄')
+            .setStyle(ButtonStyle.Secondary),
           new ButtonBuilder()
             .setCustomId(`ticket_vouch_${ticketChannel.id}`)
             .setLabel('Vouch Carrier')
             .setEmoji('⭐')
-            .setStyle(ButtonStyle.Secondary),
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId(`ticket_close_${ticketChannel.id}`)
+            .setLabel('Close')
+            .setEmoji('🗑️')
+            .setStyle(ButtonStyle.Danger),
         )
       );
 
     await ticketChannel.send({
-      content: `${pingMsg} — New carry ticket!`,
+      content: `${pingMsg} — New carry ticket from ${member}!`,
       components: [container],
       flags: MessageFlags.IsComponentsV2,
     });
@@ -95,14 +146,13 @@ async function handleTicketButtons(interaction, client) {
     return;
   }
 
-
+  // ── CLAIM TICKET ──────────────────────────────────────────────
   if (customId.startsWith('ticket_claim_')) {
     const channelId = customId.replace('ticket_claim_', '');
     const ticket = db.get('tickets', channelId);
     if (!ticket) return interaction.reply({ content: '❌ Ticket data not found.', flags: 64 });
 
-    const carriersRoleId = process.env.CARRIERS_ROLE_ID;
-    if (carriersRoleId && !member.roles.cache.has(carriersRoleId)) {
+    if (!isCarrier(member) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: '❌ Only carriers can claim tickets.', flags: 64 });
     }
     if (ticket.carrierId) {
@@ -115,43 +165,110 @@ async function handleTicketButtons(interaction, client) {
     await interaction.channel.permissionOverwrites.create(member.id, {
       ViewChannel: true,
       SendMessages: true,
+      ReadMessageHistory: true,
     });
 
     const container = new ContainerBuilder()
-
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`# ✅ Ticket Claimed\n${member} has claimed this ticket and will carry you!\n\n**Carrier:** ${member}`)
+        new TextDisplayBuilder().setContent(`# ✅ Ticket Claimed\n${member} has claimed this ticket!\n\n**Carrier:** ${member}`)
       );
 
-    await interaction.reply({
-      components: [container],
-      flags: MessageFlags.IsComponentsV2,
+    await interaction.reply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    return;
+  }
+
+  // ── TRANSCRIPT ────────────────────────────────────────────────
+  if (customId.startsWith('ticket_transcript_')) {
+    const channelId = customId.replace('ticket_transcript_', '');
+    const ticket = db.get('tickets', channelId);
+
+    const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+    const isOwner = ticket?.ownerId === member.id;
+    const carrier = isCarrier(member);
+
+    if (!isAdmin && !isOwner && !carrier) {
+      return interaction.reply({ content: '❌ You cannot generate a transcript.', flags: 64 });
+    }
+
+    await interaction.deferReply({ flags: 64 });
+
+    // Fetch all messages
+    let allMessages = [];
+    let lastId = null;
+    while (true) {
+      const options = { limit: 100 };
+      if (lastId) options.before = lastId;
+      const batch = await interaction.channel.messages.fetch(options);
+      if (batch.size === 0) break;
+      allMessages.push(...batch.values());
+      lastId = batch.last().id;
+      if (batch.size < 100) break;
+    }
+
+    allMessages.reverse();
+
+    const lines = [
+      `TRANSCRIPT — ${ticket?.game || 'Carry'} Ticket`,
+      `Channel: ${interaction.channel.name}`,
+      `Generated: ${new Date().toUTCString()}`,
+      `Owner: ${member.user.tag}`,
+      '─'.repeat(60),
+      '',
+      ...allMessages.map(m =>
+        `[${new Date(m.createdTimestamp).toUTCString()}] ${m.author.tag}: ${m.content || '[embed/attachment]'}`
+      ),
+    ];
+
+    const buffer = Buffer.from(lines.join('\n'), 'utf8');
+    const attachment = new AttachmentBuilder(buffer, { name: `transcript-${interaction.channel.name}.txt` });
+
+    // Send to transcript channel if configured
+    const transcriptChannelId = (process.env.TRANSCRIPTS_CHANNEL_ID || '').trim();
+    const transcriptChannel = transcriptChannelId ? guild.channels.cache.get(transcriptChannelId) : null;
+
+    if (transcriptChannel) {
+      await transcriptChannel.send({
+        content: `📄 Transcript for **${interaction.channel.name}** — requested by ${member}`,
+        files: [attachment],
+      });
+    }
+
+    // Also DM/reply to the requester
+    const buffer2 = Buffer.from(lines.join('\n'), 'utf8');
+    const attachment2 = new AttachmentBuilder(buffer2, { name: `transcript-${interaction.channel.name}.txt` });
+
+    await interaction.editReply({
+      content: transcriptChannel
+        ? `✅ Transcript sent to ${transcriptChannel}!`
+        : '✅ Here is your transcript:',
+      files: [attachment2],
     });
     return;
   }
 
-
+  // ── CLOSE TICKET ──────────────────────────────────────────────
   if (customId.startsWith('ticket_close_')) {
     const channelId = customId.replace('ticket_close_', '');
     const ticket = db.get('tickets', channelId);
 
-    const carriersRoleId = process.env.CARRIERS_ROLE_ID;
-    const isCarrier = carriersRoleId ? member.roles.cache.has(carriersRoleId) : false;
     const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
     const isOwner = ticket?.ownerId === member.id;
+    const carrier = isCarrier(member);
 
-    if (!isCarrier && !isAdmin && !isOwner) {
+    if (!isAdmin && !isOwner && !carrier) {
       return interaction.reply({ content: '❌ You cannot close this ticket.', flags: 64 });
     }
 
     await interaction.reply({ content: '🗑️ Closing ticket in 5 seconds...' });
     setTimeout(async () => {
-      db.del('tickets', channelId);
+      ticket.open = false;
+      db.set('tickets', channelId, ticket);
       await interaction.channel.delete().catch(() => {});
     }, 5000);
     return;
   }
 
+  // ── VOUCH ─────────────────────────────────────────────────────
   if (customId.startsWith('ticket_vouch_')) {
     const channelId = customId.replace('ticket_vouch_', '');
     const ticket = db.get('tickets', channelId);
@@ -165,21 +282,18 @@ async function handleTicketButtons(interaction, client) {
     ticket.vouchedUsers.push(member.id);
     db.set('tickets', channelId, ticket);
 
-    // Update reputation
     const currentRep = db.get('reputation', ticket.carrierId) || 0;
     const newRep = currentRep + 1;
     db.set('reputation', ticket.carrierId, newRep);
 
     const container = new ContainerBuilder()
-
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`# ⭐ Vouch Submitted!\n${member} vouched for <@${ticket.carrierId}>!\n\n**Carrier Reputation:** ⭐ ${newRep} vouch${newRep !== 1 ? 'es' : ''}`)
+        new TextDisplayBuilder().setContent(
+          `# ⭐ Vouch Submitted!\n${member} vouched for <@${ticket.carrierId}>!\n\n**Carrier Reputation:** ⭐ ${newRep} vouch${newRep !== 1 ? 'es' : ''}`
+        )
       );
 
-    await interaction.reply({
-      components: [container],
-      flags: MessageFlags.IsComponentsV2,
-    });
+    await interaction.reply({ components: [container], flags: MessageFlags.IsComponentsV2 });
     return;
   }
 }

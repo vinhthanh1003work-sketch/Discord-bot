@@ -1,6 +1,7 @@
 const { handleTicketButtons } = require('../utils/ticketHandler');
 const { handleLfgButtons, handleLfgSelect, handleLfgModal } = require('../utils/lfgHandler');
 const { handleLoaButtons } = require('../utils/loaHandler');
+const { handleRobloxButtons } = require('../utils/robloxHandler');
 
 module.exports = {
   name: 'interactionCreate',
@@ -30,6 +31,7 @@ module.exports = {
       if (id.startsWith('ticket_')) await handleTicketButtons(interaction, client);
       else if (id.startsWith('lfg_')) await handleLfgButtons(interaction, client);
       else if (id.startsWith('loa_')) await handleLoaButtons(interaction, client);
+      else if (id.startsWith('roblox_')) await handleRobloxButtons(interaction, client);
       return;
     }
 

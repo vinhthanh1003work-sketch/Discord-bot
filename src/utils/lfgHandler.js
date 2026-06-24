@@ -86,7 +86,7 @@ async function handleLfgSelect(interaction, client) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('lfg_gamemode')
-        .setLabel('Game Mode (e.g. Ranked, Casual, Story)')
+        .setLabel('Game Mode (e.g. Portals, Rifts, Stories)')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(50)
@@ -166,7 +166,7 @@ async function handleLfgModal(interaction, client) {
   const interval = setInterval(async () => {
     if (!db.get('lfg', member.id)) return clearInterval(interval);
     await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService);
-  }, 5 * 60 * 1000);
+  }, 6 * 60 * 60 * 1000);
 
   dutyIntervals.set(member.id, interval);
 
@@ -181,7 +181,7 @@ async function sendLfgPanel(channel, member, game, gamemode, duration, slots, le
   const container = new ContainerBuilder()
 
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`# 🔍 Player Looking For Group!\n${member} is on duty and looking for a group!`)
+      new TextDisplayBuilder().setContent(`# 🔍 Player Looking For Group!\n @silent ${member} is on duty and looking for a group!`)
     )
     .addSeparatorComponents(
       new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
