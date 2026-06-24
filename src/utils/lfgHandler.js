@@ -1,7 +1,5 @@
 const {
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -9,8 +7,6 @@ const {
   TextInputBuilder,
   TextInputStyle,
   StringSelectMenuBuilder,
-  SeparatorSpacingSize,
-  MessageFlags,
 } = require('discord.js');
 const db = require('./db');
 require('dotenv').config();
@@ -26,9 +22,10 @@ const GAME_EMOJIS = {
 async function handleLfgButtons(interaction, client) {
   const { customId, member } = interaction;
 
+  // ── GO ON DUTY ────────────────────────────────────────────────
   if (customId === 'lfg_start') {
     if (db.get('lfg', member.id)) {
-      return interaction.reply({ content: '❌ You are already on duty! Use **End Duty** first.', flags: 64 });
+      return interaction.reply({ content: '❌ You are already on duty! Use **End Duty** first.', ephemeral: true });
     }
 
     const row = new ActionRowBuilder().addComponents(
@@ -42,13 +39,14 @@ async function handleLfgButtons(interaction, client) {
         ])
     );
 
-    await interaction.reply({ content: '🎮 **Select your game to go on duty:**', components: [row], flags: 64 });
+    await interaction.reply({ content: '🎮 **Select your game to go on duty:**', components: [row], ephemeral: true });
     return;
   }
 
+  // ── END DUTY ─────────────────────────────────────────────────
   if (customId === 'lfg_end') {
     if (!db.get('lfg', member.id)) {
-      return interaction.reply({ content: '❌ You are not currently on duty.', flags: 64 });
+      return interaction.reply({ content: '❌ You are not currently on duty.', ephemeral: true });
     }
 
     if (dutyIntervals.has(member.id)) {
@@ -59,7 +57,7 @@ async function handleLfgButtons(interaction, client) {
     db.del('lfg', member.id);
     await removeLfgTag(member);
 
-    await interaction.reply({ content: '✅ You are now **off duty**. Your `[LFG]` tag has been removed.', flags: 64 });
+    await interaction.reply({ content: '✅ You are now **off duty**. Your `[LFG]` tag has been removed.', ephemeral: true });
     return;
   }
 }
@@ -134,7 +132,8 @@ async function handleLfgModal(interaction, client) {
   const leechAllowed = leech === 'yes' ? '✅ Yes' : '❌ No';
   const mvpService = mvp === 'yes' ? '✅ Yes' : '❌ No';
 
-  await interaction.deferReply({ flags: 64 });
+  // Respond to modal immediately to avoid timeout
+  await interaction.reply({ content: '⏳ Going on duty...', ephemeral: true });
 
   const lfgChannelId = (process.env.LFG_CHANNEL_ID || '').trim();
   const lfgChannel = guild.channels.cache.get(lfgChannelId);
@@ -146,59 +145,40 @@ async function handleLfgModal(interaction, client) {
 
   db.set('lfg', member.id, { game, gamemode, duration, slots, leechAllowed, mvpService, startedAt: Date.now() });
 
-  await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService, guild);
+  await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService);
 
   const interval = setInterval(async () => {
     if (!db.get('lfg', member.id)) return clearInterval(interval);
-    await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService, guild);
+    await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService);
   }, 5 * 60 * 1000);
 
   dutyIntervals.set(member.id, interval);
 
-  await interaction.editReply({
-    content: `✅ You are now **on duty**! LFG panel posted in ${lfgChannel}. Your nickname now shows \`[LFG]\`.`,
-  });
+  await interaction.editReply({ content: `✅ You are now **on duty**! LFG panel posted in ${lfgChannel}. Your nickname now shows \`[LFG]\`.` });
 }
 
-async function sendLfgPanel(channel, member, game, gamemode, duration, slots, leech, mvp, guild) {
+async function sendLfgPanel(channel, member, game, gamemode, duration, slots, leech, mvp) {
   const emoji = GAME_EMOJIS[game] || '🎮';
-
-  // Ping LFG role
   const lfgRoleId = (process.env.LFG_ROLE_ID || '').trim();
   const pingMsg = lfgRoleId ? `<@&${lfgRoleId}>` : '';
-
   const displayName = member.nickname || member.user.username;
 
-  const container = new ContainerBuilder()
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`# 🔍 Looking For Group`)
+  const embed = new EmbedBuilder()
+    .setTitle('🔍 Looking For Group')
+    .setColor(0x57F287)
+    .addFields(
+      { name: 'Game', value: `${emoji} ${game}`, inline: true },
+      { name: 'Player', value: displayName, inline: true },
+      { name: 'Game Mode', value: gamemode, inline: true },
+      { name: 'Duration', value: duration, inline: true },
+      { name: 'Available Slots', value: slots, inline: true },
+      { name: 'Leech Allowed', value: leech, inline: true },
+      { name: 'MVP Service', value: mvp, inline: true },
     )
-    .addSeparatorComponents(
-      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `${emoji} **Game:** ${game}\n` +
-        `👤 **Player:** ${displayName}\n` +
-        `⚔️ **Game Mode:** ${gamemode}\n` +
-        `⏱️ **Duration:** ${duration}\n` +
-        `🪑 **Available Slots:** ${slots}\n` +
-        `🧸 **Leech Allowed:** ${leech}\n` +
-        `🏆 **MVP Service:** ${mvp}`
-      )
-    )
-    .addSeparatorComponents(
-      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('-# DM them or join their session!')
-    );
+    .setFooter({ text: 'Ping them to join their session!' })
+    .setTimestamp();
 
-  await channel.send({
-    content: pingMsg || undefined,
-    components: [container],
-    flags: MessageFlags.IsComponentsV2,
-  });
+  await channel.send({ content: pingMsg || undefined, embeds: [embed] });
 }
 
 async function addLfgTag(member) {

@@ -1,14 +1,10 @@
 const {
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  SeparatorSpacingSize,
   ChannelType,
   PermissionFlagsBits,
-  MessageFlags,
   AttachmentBuilder,
 } = require('discord.js');
 const db = require('./db');
@@ -41,9 +37,8 @@ async function handleTicketButtons(interaction, client) {
     const game = GAMES[customId];
     if (!game) return;
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ ephemeral: true });
 
-    // Check for existing open ticket
     const allTickets = db.getAll('tickets');
     const existingId = Object.entries(allTickets).find(
       ([, t]) => t.ownerId === member.id && t.open
@@ -93,50 +88,46 @@ async function handleTicketButtons(interaction, client) {
       createdAt: Date.now(),
     });
 
-    // Ping carriers — no panel sent in channel
+    const embed = new EmbedBuilder()
+      .setTitle(`${game.name} Carry Ticket`)
+      .setDescription(
+        `**Player:** ${member}\n` +
+        `**Ticket:** \`${channelName}\`\n` +
+        `**Status:** 🟡 Waiting for carrier\n\n` +
+        `${member} please describe what carry you need!`
+      )
+      .setColor(0x5865F2)
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket_claim_${ticketChannel.id}`)
+        .setLabel('Claim')
+        .setEmoji('✅')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`ticket_transcript_${ticketChannel.id}`)
+        .setLabel('Transcript')
+        .setEmoji('📄')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`ticket_vouch_${ticketChannel.id}`)
+        .setLabel('Vouch Carrier')
+        .setEmoji('⭐')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`ticket_close_${ticketChannel.id}`)
+        .setLabel('Close')
+        .setEmoji('🗑️')
+        .setStyle(ButtonStyle.Danger),
+    );
+
     await ticketChannel.send({
-      content: `${pingMsg} — New carry ticket from ${member}! Please claim below.`,
-      components: [
-        new ContainerBuilder()
-          .addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(
-              `# ${game.emoji} ${game.name} Carry Ticket\n` +
-              `**Player:** ${member}\n` +
-              `**Ticket:** \`${channelName}\`\n` +
-              `**Status:** 🟡 Waiting for carrier\n\n` +
-              `${member} please describe what carry you need!`
-            )
-          )
-          .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
-          .addActionRowComponents(
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`ticket_claim_${ticketChannel.id}`)
-                .setLabel('Claim')
-                .setEmoji('✅')
-                .setStyle(ButtonStyle.Success),
-              new ButtonBuilder()
-                .setCustomId(`ticket_transcript_${ticketChannel.id}`)
-                .setLabel('Transcript')
-                .setEmoji('📄')
-                .setStyle(ButtonStyle.Secondary),
-              new ButtonBuilder()
-                .setCustomId(`ticket_vouch_${ticketChannel.id}`)
-                .setLabel('Vouch Carrier')
-                .setEmoji('⭐')
-                .setStyle(ButtonStyle.Primary),
-              new ButtonBuilder()
-                .setCustomId(`ticket_close_${ticketChannel.id}`)
-                .setLabel('Close')
-                .setEmoji('🗑️')
-                .setStyle(ButtonStyle.Danger),
-            )
-          ),
-      ],
-      flags: MessageFlags.IsComponentsV2,
+      content: `${pingMsg} — New carry ticket from ${member}!`,
+      embeds: [embed],
+      components: [row],
     });
 
-    // Only tell user the channel was created — no extra message in ticket channel
     await interaction.editReply({ content: `✅ Your ticket has been created: ${ticketChannel}` });
     return;
   }
@@ -145,13 +136,13 @@ async function handleTicketButtons(interaction, client) {
   if (customId.startsWith('ticket_claim_')) {
     const channelId = customId.replace('ticket_claim_', '');
     const ticket = db.get('tickets', channelId);
-    if (!ticket) return interaction.reply({ content: '❌ Ticket data not found.', flags: 64 });
+    if (!ticket) return interaction.reply({ content: '❌ Ticket data not found.', ephemeral: true });
 
     if (!isCarrier(member) && !member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ Only carriers can claim tickets.', flags: 64 });
+      return interaction.reply({ content: '❌ Only carriers can claim tickets.', ephemeral: true });
     }
     if (ticket.carrierId) {
-      return interaction.reply({ content: `❌ Already claimed by <@${ticket.carrierId}>.`, flags: 64 });
+      return interaction.reply({ content: `❌ Already claimed by <@${ticket.carrierId}>.`, ephemeral: true });
     }
 
     ticket.carrierId = member.id;
@@ -163,12 +154,13 @@ async function handleTicketButtons(interaction, client) {
       ReadMessageHistory: true,
     });
 
-    const container = new ContainerBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`# ✅ Ticket Claimed\n${member} has claimed this ticket!\n\n**Carrier:** ${member}`)
-      );
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Ticket Claimed')
+      .setDescription(`${member} has claimed this ticket!\n\n**Carrier:** ${member}`)
+      .setColor(0x57F287)
+      .setTimestamp();
 
-    await interaction.reply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    await interaction.reply({ embeds: [embed] });
     return;
   }
 
@@ -182,10 +174,10 @@ async function handleTicketButtons(interaction, client) {
     const carrier = isCarrier(member);
 
     if (!isAdmin && !isOwner && !carrier) {
-      return interaction.reply({ content: '❌ You cannot generate a transcript.', flags: 64 });
+      return interaction.reply({ content: '❌ You cannot generate a transcript.', ephemeral: true });
     }
 
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ ephemeral: true });
 
     let allMessages = [];
     let lastId = null;
@@ -213,7 +205,6 @@ async function handleTicketButtons(interaction, client) {
     ];
 
     const buffer = Buffer.from(lines.join('\n'), 'utf8');
-
     const transcriptChannelId = (process.env.TRANSCRIPTS_CHANNEL_ID || '').trim();
     const transcriptChannel = transcriptChannelId ? guild.channels.cache.get(transcriptChannelId) : null;
 
@@ -241,7 +232,7 @@ async function handleTicketButtons(interaction, client) {
     const carrier = isCarrier(member);
 
     if (!isAdmin && !isOwner && !carrier) {
-      return interaction.reply({ content: '❌ You cannot close this ticket.', flags: 64 });
+      return interaction.reply({ content: '❌ You cannot close this ticket.', ephemeral: true });
     }
 
     await interaction.reply({ content: '🗑️ Closing ticket in 5 seconds...' });
@@ -257,11 +248,11 @@ async function handleTicketButtons(interaction, client) {
     const channelId = customId.replace('ticket_vouch_', '');
     const ticket = db.get('tickets', channelId);
 
-    if (!ticket) return interaction.reply({ content: '❌ Ticket not found.', flags: 64 });
-    if (!ticket.carrierId) return interaction.reply({ content: '❌ No carrier has claimed this ticket yet.', flags: 64 });
-    if (ticket.carrierId === member.id) return interaction.reply({ content: '❌ You cannot vouch yourself.', flags: 64 });
-    if (ticket.vouchedUsers.includes(member.id)) return interaction.reply({ content: '❌ You already vouched.', flags: 64 });
-    if (ticket.ownerId !== member.id) return interaction.reply({ content: '❌ Only the ticket creator can vouch.', flags: 64 });
+    if (!ticket) return interaction.reply({ content: '❌ Ticket not found.', ephemeral: true });
+    if (!ticket.carrierId) return interaction.reply({ content: '❌ No carrier has claimed this ticket yet.', ephemeral: true });
+    if (ticket.carrierId === member.id) return interaction.reply({ content: '❌ You cannot vouch yourself.', ephemeral: true });
+    if (ticket.vouchedUsers.includes(member.id)) return interaction.reply({ content: '❌ You already vouched.', ephemeral: true });
+    if (ticket.ownerId !== member.id) return interaction.reply({ content: '❌ Only the ticket creator can vouch.', ephemeral: true });
 
     ticket.vouchedUsers.push(member.id);
     db.set('tickets', channelId, ticket);
@@ -270,14 +261,13 @@ async function handleTicketButtons(interaction, client) {
     const newRep = currentRep + 1;
     db.set('reputation', ticket.carrierId, newRep);
 
-    const container = new ContainerBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `# ⭐ Vouch Submitted!\n${member} vouched for <@${ticket.carrierId}>!\n\n**Carrier Reputation:** ⭐ ${newRep} vouch${newRep !== 1 ? 'es' : ''}`
-        )
-      );
+    const embed = new EmbedBuilder()
+      .setTitle('⭐ Vouch Submitted!')
+      .setDescription(`${member} vouched for <@${ticket.carrierId}>!\n\n**Carrier Reputation:** ⭐ ${newRep} vouch${newRep !== 1 ? 'es' : ''}`)
+      .setColor(0xFEE75C)
+      .setTimestamp();
 
-    await interaction.reply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    await interaction.reply({ embeds: [embed] });
     return;
   }
 }

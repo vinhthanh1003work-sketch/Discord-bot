@@ -1,15 +1,11 @@
 const {
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
+  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  SeparatorSpacingSize,
-  MessageFlags,
 } = require('discord.js');
 const db = require('./db');
 require('dotenv').config();
@@ -17,17 +13,16 @@ require('dotenv').config();
 async function handleLoaButtons(interaction, client) {
   const { customId, member, guild } = interaction;
 
-  // ── APPLY FOR LOA → open modal ────────────────────────────────
+  // ── APPLY FOR LOA ─────────────────────────────────────────────
   if (customId === 'loa_apply') {
     if (db.get('loa', member.id)) {
-      return interaction.reply({ content: '❌ You are already on LOA!', flags: 64 });
+      return interaction.reply({ content: '❌ You are already on LOA!', ephemeral: true });
     }
 
-    // Check if they already have a pending application
     const pending = db.getAll('loa_pending');
     const alreadyPending = Object.values(pending).find(p => p.userId === member.id);
     if (alreadyPending) {
-      return interaction.reply({ content: '❌ You already have a pending LOA application awaiting review.', flags: 64 });
+      return interaction.reply({ content: '❌ You already have a pending LOA application awaiting review.', ephemeral: true });
     }
 
     const modal = new ModalBuilder()
@@ -62,94 +57,84 @@ async function handleLoaButtons(interaction, client) {
   // ── END LOA ───────────────────────────────────────────────────
   if (customId === 'loa_end') {
     if (!db.get('loa', member.id)) {
-      return interaction.reply({ content: '❌ You are not currently on LOA.', flags: 64 });
+      return interaction.reply({ content: '❌ You are not currently on LOA.', ephemeral: true });
     }
 
     db.del('loa', member.id);
     await removeLoaTag(member);
 
-    const container = new ContainerBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`# ✅ Welcome Back!\n${member} has returned from **Leave of Absence**!`)
-      );
-
-    await interaction.reply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    await interaction.reply({
+      content: '✅ Welcome back! Your `[LOA]` tag has been removed.',
+      ephemeral: true,
+    });
     return;
   }
 
-  // ── APPROVE APPLICATION ───────────────────────────────────────
+  // ── APPROVE ───────────────────────────────────────────────────
   if (customId.startsWith('loa_approve_')) {
     if (!member.permissions.has('Administrator') && !member.permissions.has('ManageRoles')) {
-      return interaction.reply({ content: '❌ You do not have permission to approve LOA requests.', flags: 64 });
+      return interaction.reply({ content: '❌ You do not have permission to approve LOA requests.', ephemeral: true });
     }
 
     const applicationId = customId.replace('loa_approve_', '');
     const application = db.get('loa_pending', applicationId);
-    if (!application) return interaction.reply({ content: '❌ Application not found.', flags: 64 });
+    if (!application) return interaction.reply({ content: '❌ Application not found or already handled.', ephemeral: true });
 
     const targetMember = await guild.members.fetch(application.userId).catch(() => null);
     if (!targetMember) {
       db.del('loa_pending', applicationId);
-      return interaction.reply({ content: '❌ User no longer in server. Application removed.', flags: 64 });
+      return interaction.reply({ content: '❌ User no longer in server.', ephemeral: true });
     }
 
-    // Grant LOA
     db.set('loa', application.userId, { startedAt: Date.now(), reason: application.reason });
     db.del('loa_pending', applicationId);
     await addLoaTag(targetMember);
 
-    // Update the application message
-    const container = new ContainerBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `# ✅ LOA Approved\n` +
-          `**User:** ${targetMember}\n` +
-          `**Reason:** ${application.reason}\n` +
-          `**Duration:** ${application.duration}\n\n` +
-          `**Approved by:** ${member}`
-        )
-      );
+    const embed = new EmbedBuilder()
+      .setTitle('✅ LOA Approved')
+      .setDescription(
+        `**User:** ${targetMember}\n` +
+        `**Reason:** ${application.reason}\n` +
+        `**Duration:** ${application.duration}\n\n` +
+        `**Approved by:** ${member}`
+      )
+      .setColor(0x57F287)
+      .setTimestamp();
 
-    await interaction.update({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    await interaction.update({ embeds: [embed], components: [] });
 
-    // Notify the user
-    await targetMember.send({
-      content: `✅ Your LOA application has been **approved** by ${member.user.tag}! Your \`[LOA]\` tag has been applied.`,
-    }).catch(() => {});
+    await targetMember.send({ content: `✅ Your LOA application has been **approved** by ${member.user.tag}! Your \`[LOA]\` tag has been applied.` }).catch(() => {});
     return;
   }
 
-  // ── DECLINE APPLICATION ───────────────────────────────────────
+  // ── DECLINE ───────────────────────────────────────────────────
   if (customId.startsWith('loa_decline_')) {
     if (!member.permissions.has('Administrator') && !member.permissions.has('ManageRoles')) {
-      return interaction.reply({ content: '❌ You do not have permission to decline LOA requests.', flags: 64 });
+      return interaction.reply({ content: '❌ You do not have permission to decline LOA requests.', ephemeral: true });
     }
 
     const applicationId = customId.replace('loa_decline_', '');
     const application = db.get('loa_pending', applicationId);
-    if (!application) return interaction.reply({ content: '❌ Application not found.', flags: 64 });
+    if (!application) return interaction.reply({ content: '❌ Application not found or already handled.', ephemeral: true });
 
     const targetMember = await guild.members.fetch(application.userId).catch(() => null);
     db.del('loa_pending', applicationId);
 
-    const container = new ContainerBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `# ❌ LOA Declined\n` +
-          `**User:** <@${application.userId}>\n` +
-          `**Reason:** ${application.reason}\n` +
-          `**Duration:** ${application.duration}\n\n` +
-          `**Declined by:** ${member}`
-        )
-      );
+    const embed = new EmbedBuilder()
+      .setTitle('❌ LOA Declined')
+      .setDescription(
+        `**User:** <@${application.userId}>\n` +
+        `**Reason:** ${application.reason}\n` +
+        `**Duration:** ${application.duration}\n\n` +
+        `**Declined by:** ${member}`
+      )
+      .setColor(0xED4245)
+      .setTimestamp();
 
-    await interaction.update({ components: [container], flags: MessageFlags.IsComponentsV2 });
+    await interaction.update({ embeds: [embed], components: [] });
 
-    // Notify the user
     if (targetMember) {
-      await targetMember.send({
-        content: `❌ Your LOA application has been **declined** by ${member.user.tag}.`,
-      }).catch(() => {});
+      await targetMember.send({ content: `❌ Your LOA application has been **declined** by ${member.user.tag}.` }).catch(() => {});
     }
     return;
   }
@@ -161,7 +146,8 @@ async function handleLoaModal(interaction, client) {
   const reason = interaction.fields.getTextInputValue('loa_reason');
   const duration = interaction.fields.getTextInputValue('loa_duration');
 
-  await interaction.deferReply({ flags: 64 });
+  // Reply immediately to avoid modal timeout
+  await interaction.reply({ content: '⏳ Submitting your application...', ephemeral: true });
 
   const appChannelId = (process.env.LOA_APPLICATIONS_CHANNEL_ID || '').trim();
   const appChannel = guild.channels.cache.get(appChannelId);
@@ -169,7 +155,6 @@ async function handleLoaModal(interaction, client) {
     return interaction.editReply({ content: '❌ LOA applications channel not configured. Ask an admin to set `LOA_APPLICATIONS_CHANNEL_ID`.' });
   }
 
-  // Generate a unique application ID
   const applicationId = `${member.id}_${Date.now()}`;
 
   db.set('loa_pending', applicationId, {
@@ -179,38 +164,32 @@ async function handleLoaModal(interaction, client) {
     submittedAt: Date.now(),
   });
 
-  const container = new ContainerBuilder()
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        `# 📋 LOA Application\n` +
-        `**Applicant:** ${member}\n` +
-        `**Reason:** ${reason}\n` +
-        `**Duration:** ${duration}`
-      )
+  const embed = new EmbedBuilder()
+    .setTitle('📋 LOA Application')
+    .setDescription(
+      `**Applicant:** ${member}\n` +
+      `**Reason:** ${reason}\n` +
+      `**Duration:** ${duration}`
     )
-    .addSeparatorComponents(
-      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
-    )
-    .addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`loa_approve_${applicationId}`)
-          .setLabel('Approve')
-          .setEmoji('✅')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`loa_decline_${applicationId}`)
-          .setLabel('Decline')
-          .setEmoji('❌')
-          .setStyle(ButtonStyle.Danger),
-      )
-    );
+    .setColor(0xFEE75C)
+    .setTimestamp();
 
-  await appChannel.send({ components: [container], flags: MessageFlags.IsComponentsV2 });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`loa_approve_${applicationId}`)
+      .setLabel('Approve')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`loa_decline_${applicationId}`)
+      .setLabel('Decline')
+      .setEmoji('❌')
+      .setStyle(ButtonStyle.Danger),
+  );
 
-  await interaction.editReply({
-    content: `✅ Your LOA application has been submitted! Staff will review it shortly.`,
-  });
+  await appChannel.send({ embeds: [embed], components: [row] });
+
+  await interaction.editReply({ content: '✅ Your LOA application has been submitted! Staff will review it shortly.' });
 }
 
 async function addLoaTag(member) {
