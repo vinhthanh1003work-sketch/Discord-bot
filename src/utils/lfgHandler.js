@@ -15,22 +15,19 @@ const {
 const db = require('./db');
 require('dotenv').config();
 
-// In-memory interval tracker (intervals can't be JSON-serialized)
 const dutyIntervals = new Map();
 
 const GAME_EMOJIS = {
-  'Anime Vanguards': '🌸',
-  'Universal Tower Defense X': '🗼',
-  'Anime Squadron': '⚔️',
+  'Anime Vanguards': '<:anime_vanguards:1518886530306015343>',
+  'Universal Tower Defense X': '<:universal_tdx:1518886910691381358>',
+  'Anime Squadron': '<:anime_squadron:1518886230664679455>',
 };
 
 async function handleLfgButtons(interaction, client) {
   const { customId, member } = interaction;
 
-  // ── GO ON DUTY → show game dropdown ──────────────────────────
   if (customId === 'lfg_start') {
-    const existing = db.get('lfg', member.id);
-    if (existing) {
+    if (db.get('lfg', member.id)) {
       return interaction.reply({ content: '❌ You are already on duty! Use **End Duty** first.', flags: 64 });
     }
 
@@ -39,28 +36,21 @@ async function handleLfgButtons(interaction, client) {
         .setCustomId('lfg_game_select')
         .setPlaceholder('Select your game...')
         .addOptions([
-          { label: 'Anime Vanguards', value: 'Anime Vanguards', emoji: '🌸' },
-          { label: 'Universal Tower Defense X', value: 'Universal Tower Defense X', emoji: '🗼' },
-          { label: 'Anime Squadron', value: 'Anime Squadron', emoji: '⚔️' },
+          { label: 'Anime Vanguards', value: 'Anime Vanguards', emoji: { id: '1518886530306015343' } },
+          { label: 'Universal Tower Defense X', value: 'Universal Tower Defense X', emoji: { id: '1518886910691381358' } },
+          { label: 'Anime Squadron', value: 'Anime Squadron', emoji: { id: '1518886230664679455' } },
         ])
     );
 
-    await interaction.reply({
-      content: '🎮 **Select your game to go on duty:**',
-      components: [row],
-      flags: 64,
-    });
+    await interaction.reply({ content: '🎮 **Select your game to go on duty:**', components: [row], flags: 64 });
     return;
   }
 
-  // ── END DUTY ─────────────────────────────────────────────────
   if (customId === 'lfg_end') {
-    const existing = db.get('lfg', member.id);
-    if (!existing) {
+    if (!db.get('lfg', member.id)) {
       return interaction.reply({ content: '❌ You are not currently on duty.', flags: 64 });
     }
 
-    // Clear interval
     if (dutyIntervals.has(member.id)) {
       clearInterval(dutyIntervals.get(member.id));
       dutyIntervals.delete(member.id);
@@ -86,7 +76,7 @@ async function handleLfgSelect(interaction, client) {
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('lfg_gamemode')
-        .setLabel('Game Mode (e.g. Portals, Rifts, Stories)')
+        .setLabel('Game Mode (e.g. Ranked, Casual, Story)')
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setMaxLength(50)
@@ -154,19 +144,14 @@ async function handleLfgModal(interaction, client) {
 
   await addLfgTag(member);
 
-  // Save duty state to JSON
-  db.set('lfg', member.id, {
-    game, gamemode, duration, slots, leechAllowed, mvpService,
-    startedAt: Date.now(),
-  });
+  db.set('lfg', member.id, { game, gamemode, duration, slots, leechAllowed, mvpService, startedAt: Date.now() });
 
-  await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService);
+  await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService, guild);
 
-  // Repeat every 5 minutes
   const interval = setInterval(async () => {
     if (!db.get('lfg', member.id)) return clearInterval(interval);
-    await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService);
-  }, 6 * 60 * 60 * 1000);
+    await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService, guild);
+  }, 5 * 60 * 1000);
 
   dutyIntervals.set(member.id, interval);
 
@@ -175,20 +160,26 @@ async function handleLfgModal(interaction, client) {
   });
 }
 
-async function sendLfgPanel(channel, member, game, gamemode, duration, slots, leech, mvp) {
+async function sendLfgPanel(channel, member, game, gamemode, duration, slots, leech, mvp, guild) {
   const emoji = GAME_EMOJIS[game] || '🎮';
 
-  const container = new ContainerBuilder()
+  // Ping LFG role
+  const lfgRoleId = (process.env.LFG_ROLE_ID || '').trim();
+  const pingMsg = lfgRoleId ? `<@&${lfgRoleId}>` : '';
 
+  const displayName = member.nickname || member.user.username;
+
+  const container = new ContainerBuilder()
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`# 🔍 Player Looking For Group!\n @silent ${member} is on duty and looking for a group!`)
+      new TextDisplayBuilder().setContent(`# 🔍 Looking For Group`)
     )
     .addSeparatorComponents(
       new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
     )
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        `🎮 **Game:** ${emoji} ${game}\n` +
+        `${emoji} **Game:** ${game}\n` +
+        `👤 **Player:** ${displayName}\n` +
         `⚔️ **Game Mode:** ${gamemode}\n` +
         `⏱️ **Duration:** ${duration}\n` +
         `🪑 **Available Slots:** ${slots}\n` +
@@ -200,10 +191,11 @@ async function sendLfgPanel(channel, member, game, gamemode, duration, slots, le
       new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
     )
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent('-# Ping them or join their session!')
+      new TextDisplayBuilder().setContent('-# DM them or join their session!')
     );
 
   await channel.send({
+    content: pingMsg || undefined,
     components: [container],
     flags: MessageFlags.IsComponentsV2,
   });

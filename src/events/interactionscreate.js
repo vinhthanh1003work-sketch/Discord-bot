@@ -1,6 +1,6 @@
 const { handleTicketButtons } = require('../utils/ticketHandler');
 const { handleLfgButtons, handleLfgSelect, handleLfgModal } = require('../utils/lfgHandler');
-const { handleLoaButtons } = require('../utils/loaHandler');
+const { handleLoaButtons, handleLoaModal } = require('../utils/loaHandler');
 const { handleRobloxButtons } = require('../utils/robloxHandler');
 
 module.exports = {
@@ -47,6 +47,9 @@ module.exports = {
     if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('lfg_modal_')) {
         await handleLfgModal(interaction, client);
+      }
+      if (interaction.customId === 'loa_modal') {
+        await handleLoaModal(interaction, client);
       }
     }
   },

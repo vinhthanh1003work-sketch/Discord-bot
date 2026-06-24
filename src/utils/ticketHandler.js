@@ -15,17 +15,15 @@ const db = require('./db');
 require('dotenv').config();
 
 const GAMES = {
-  ticket_create_av:   { name: 'Anime Vanguards',           short: 'AV',   emoji: '🌸', roleEnv: 'AV_CARRIER_ROLE_ID'   },
-  ticket_create_utdx: { name: 'Universal Tower Defense X', short: 'UTDX', emoji: '🗼', roleEnv: 'UTDX_CARRIER_ROLE_ID' },
-  ticket_create_as:   { name: 'Anime Squadron',            short: 'AS',   emoji: '⚔️', roleEnv: 'AS_CARRIER_ROLE_ID'   },
+  ticket_create_av:   { name: 'Anime Vanguards',           short: 'AV',   emoji: '<:anime_vanguards:1518886530306015343>',  roleEnv: 'AV_CARRIER_ROLE_ID'   },
+  ticket_create_utdx: { name: 'Universal Tower Defense X', short: 'UTDX', emoji: '<:universal_tdx:1518886910691381358>',    roleEnv: 'UTDX_CARRIER_ROLE_ID' },
+  ticket_create_as:   { name: 'Anime Squadron',            short: 'AS',   emoji: '<:anime_squadron:1518886230664679455>',   roleEnv: 'AS_CARRIER_ROLE_ID'   },
 };
 
-// Generate a 4-character alphanumeric code
 function genCode() {
   return Math.random().toString(36).substring(2, 6).toUpperCase();
 }
 
-// Check if member has any carrier role
 function isCarrier(member) {
   const roles = [
     process.env.AV_CARRIER_ROLE_ID,
@@ -43,7 +41,6 @@ async function handleTicketButtons(interaction, client) {
     const game = GAMES[customId];
     if (!game) return;
 
-    // Defer fast — this is what stops the "thinking" timeout
     await interaction.deferReply({ flags: 64 });
 
     // Check for existing open ticket
@@ -65,11 +62,9 @@ async function handleTicketButtons(interaction, client) {
     const safeName = member.user.username.toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 12) || 'user';
     const channelName = `${game.short}-${safeName}-${code}`.toLowerCase();
 
-    // Get the per-game carrier role
     const carrierRoleId = (process.env[game.roleEnv] || '').trim();
     const pingMsg = carrierRoleId ? `<@&${carrierRoleId}>` : '@here';
 
-    // Build permission overwrites
     const overwrites = [
       { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
@@ -96,52 +91,52 @@ async function handleTicketButtons(interaction, client) {
       vouchedUsers: [],
       open: true,
       createdAt: Date.now(),
-      messages: [],
     });
 
-    const container = new ContainerBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `# ${game.emoji} ${game.name} Carry Ticket\n` +
-          `Welcome ${member}! A carrier will be with you shortly.\n\n` +
-          `**Game:** ${game.emoji} ${game.name}\n` +
-          `**Ticket:** \`${channelName}\`\n` +
-          `**Status:** 🟡 Waiting for carrier\n\n` +
-          `Please describe what carry you need below.`
-        )
-      )
-      .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
-      .addActionRowComponents(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`ticket_claim_${ticketChannel.id}`)
-            .setLabel('Claim')
-            .setEmoji('✅')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId(`ticket_transcript_${ticketChannel.id}`)
-            .setLabel('Transcript')
-            .setEmoji('📄')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId(`ticket_vouch_${ticketChannel.id}`)
-            .setLabel('Vouch Carrier')
-            .setEmoji('⭐')
-            .setStyle(ButtonStyle.Primary),
-          new ButtonBuilder()
-            .setCustomId(`ticket_close_${ticketChannel.id}`)
-            .setLabel('Close')
-            .setEmoji('🗑️')
-            .setStyle(ButtonStyle.Danger),
-        )
-      );
-
+    // Ping carriers — no panel sent in channel
     await ticketChannel.send({
-      content: `${pingMsg} — New carry ticket from ${member}!`,
-      components: [container],
+      content: `${pingMsg} — New carry ticket from ${member}! Please claim below.`,
+      components: [
+        new ContainerBuilder()
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(
+              `# ${game.emoji} ${game.name} Carry Ticket\n` +
+              `**Player:** ${member}\n` +
+              `**Ticket:** \`${channelName}\`\n` +
+              `**Status:** 🟡 Waiting for carrier\n\n` +
+              `${member} please describe what carry you need!`
+            )
+          )
+          .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
+          .addActionRowComponents(
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`ticket_claim_${ticketChannel.id}`)
+                .setLabel('Claim')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`ticket_transcript_${ticketChannel.id}`)
+                .setLabel('Transcript')
+                .setEmoji('📄')
+                .setStyle(ButtonStyle.Secondary),
+              new ButtonBuilder()
+                .setCustomId(`ticket_vouch_${ticketChannel.id}`)
+                .setLabel('Vouch Carrier')
+                .setEmoji('⭐')
+                .setStyle(ButtonStyle.Primary),
+              new ButtonBuilder()
+                .setCustomId(`ticket_close_${ticketChannel.id}`)
+                .setLabel('Close')
+                .setEmoji('🗑️')
+                .setStyle(ButtonStyle.Danger),
+            )
+          ),
+      ],
       flags: MessageFlags.IsComponentsV2,
     });
 
+    // Only tell user the channel was created — no extra message in ticket channel
     await interaction.editReply({ content: `✅ Your ticket has been created: ${ticketChannel}` });
     return;
   }
@@ -192,7 +187,6 @@ async function handleTicketButtons(interaction, client) {
 
     await interaction.deferReply({ flags: 64 });
 
-    // Fetch all messages
     let allMessages = [];
     let lastId = null;
     while (true) {
@@ -204,14 +198,13 @@ async function handleTicketButtons(interaction, client) {
       lastId = batch.last().id;
       if (batch.size < 100) break;
     }
-
     allMessages.reverse();
 
     const lines = [
       `TRANSCRIPT — ${ticket?.game || 'Carry'} Ticket`,
       `Channel: ${interaction.channel.name}`,
       `Generated: ${new Date().toUTCString()}`,
-      `Owner: ${member.user.tag}`,
+      `Owner: <@${ticket?.ownerId}>`,
       '─'.repeat(60),
       '',
       ...allMessages.map(m =>
@@ -220,28 +213,20 @@ async function handleTicketButtons(interaction, client) {
     ];
 
     const buffer = Buffer.from(lines.join('\n'), 'utf8');
-    const attachment = new AttachmentBuilder(buffer, { name: `transcript-${interaction.channel.name}.txt` });
 
-    // Send to transcript channel if configured
     const transcriptChannelId = (process.env.TRANSCRIPTS_CHANNEL_ID || '').trim();
     const transcriptChannel = transcriptChannelId ? guild.channels.cache.get(transcriptChannelId) : null;
 
     if (transcriptChannel) {
       await transcriptChannel.send({
         content: `📄 Transcript for **${interaction.channel.name}** — requested by ${member}`,
-        files: [attachment],
+        files: [new AttachmentBuilder(Buffer.from(lines.join('\n'), 'utf8'), { name: `transcript-${interaction.channel.name}.txt` })],
       });
     }
 
-    // Also DM/reply to the requester
-    const buffer2 = Buffer.from(lines.join('\n'), 'utf8');
-    const attachment2 = new AttachmentBuilder(buffer2, { name: `transcript-${interaction.channel.name}.txt` });
-
     await interaction.editReply({
-      content: transcriptChannel
-        ? `✅ Transcript sent to ${transcriptChannel}!`
-        : '✅ Here is your transcript:',
-      files: [attachment2],
+      content: transcriptChannel ? `✅ Transcript sent to ${transcriptChannel}!` : '✅ Here is your transcript:',
+      files: [new AttachmentBuilder(buffer, { name: `transcript-${interaction.channel.name}.txt` })],
     });
     return;
   }
@@ -261,8 +246,7 @@ async function handleTicketButtons(interaction, client) {
 
     await interaction.reply({ content: '🗑️ Closing ticket in 5 seconds...' });
     setTimeout(async () => {
-      ticket.open = false;
-      db.set('tickets', channelId, ticket);
+      if (ticket) { ticket.open = false; db.set('tickets', channelId, ticket); }
       await interaction.channel.delete().catch(() => {});
     }, 5000);
     return;

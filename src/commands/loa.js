@@ -19,9 +19,13 @@ module.exports = {
 
   async execute(interaction) {
     const container = new ContainerBuilder()
-
       .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('# 🏖️ Leave of Absence\n Set yourself on LOA so others know you are unavailable.\n\n**Go on LOA** — Adds `[LOA]` before your nickname.\n**End LOA** — Removes the tag and marks you as back.')
+        new TextDisplayBuilder().setContent(
+          '# 🏖️ Leave of Absence\n' +
+          'Need to step away? Submit a LOA application below.\n\n' +
+          'Your request will be reviewed by staff before the tag is applied.\n\n' +
+          '**End LOA** — If you are already on LOA and have returned, click below to remove your tag.'
+        )
       )
       .addSeparatorComponents(
         new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
@@ -29,8 +33,8 @@ module.exports = {
       .addActionRowComponents(
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
-            .setCustomId('loa_start')
-            .setLabel('Go on LOA')
+            .setCustomId('loa_apply')
+            .setLabel('Apply for LOA')
             .setEmoji('🏖️')
             .setStyle(ButtonStyle.Primary),
           new ButtonBuilder()
