@@ -150,7 +150,7 @@ async function handleLfgModal(interaction, client) {
   const interval = setInterval(async () => {
     if (!db.get('lfg', member.id)) return clearInterval(interval);
     await sendLfgPanel(lfgChannel, member, game, gamemode, duration, slots, leechAllowed, mvpService);
-  }, 5 * 60 * 1000);
+  }, 6 * 6 * 60 * 1000);
 
   dutyIntervals.set(member.id, interval);
 
