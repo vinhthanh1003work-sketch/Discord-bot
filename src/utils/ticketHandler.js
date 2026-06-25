@@ -84,6 +84,7 @@ async function handleTicketButtons(interaction, client) {
       short: game.short,
       carrierId: null,
       vouchedUsers: [],
+      vouched: false,
       open: true,
       createdAt: Date.now(),
     });
@@ -94,7 +95,8 @@ async function handleTicketButtons(interaction, client) {
         `**Player:** ${member}\n` +
         `**Ticket:** \`${channelName}\`\n` +
         `**Status:** 🟡 Waiting for carrier\n\n` +
-        `${member} please describe what carry you need!`
+        `${member} please describe what carry you need!\n\n` +
+        `-# Once the carry is done, type \`d,vouch\` to rate your carrier.`
       )
       .setColor(0x5865F2)
       .setTimestamp();
@@ -110,11 +112,6 @@ async function handleTicketButtons(interaction, client) {
         .setLabel('Transcript')
         .setEmoji('📄')
         .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId(`ticket_vouch_${ticketChannel.id}`)
-        .setLabel('Vouch Carrier')
-        .setEmoji('⭐')
-        .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(`ticket_close_${ticketChannel.id}`)
         .setLabel('Close')
@@ -197,6 +194,8 @@ async function handleTicketButtons(interaction, client) {
       `Channel: ${interaction.channel.name}`,
       `Generated: ${new Date().toUTCString()}`,
       `Owner: <@${ticket?.ownerId}>`,
+      `Carrier: ${ticket?.carrierId ? `<@${ticket.carrierId}>` : 'Unclaimed'}`,
+      `Vouched: ${ticket?.vouched ? `Yes — ${ticket.vouchData?.stars}★ — "${ticket.vouchData?.comment}"` : 'No'}`,
       '─'.repeat(60),
       '',
       ...allMessages.map(m =>
@@ -235,6 +234,32 @@ async function handleTicketButtons(interaction, client) {
       return interaction.reply({ content: '❌ You cannot close this ticket.', ephemeral: true });
     }
 
+    // Block close if carry was done but user hasn't vouched
+    if (ticket?.carrierId && !ticket?.vouched) {
+      const embed = new EmbedBuilder()
+        .setTitle('⚠️ Vouch Required Before Closing')
+        .setDescription(
+          `<@${ticket.ownerId}> hasn't vouched yet!\n\n` +
+          `Please ask the player to type \`d,vouch\` to rate the carry before closing.\n\n` +
+          `-# Admins can close without a vouch if needed.`
+        )
+        .setColor(0xFEE75C);
+
+      // Admins can still force close
+      if (isAdmin) {
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`ticket_forceclose_${channelId}`)
+            .setLabel('Force Close (Admin)')
+            .setEmoji('🔨')
+            .setStyle(ButtonStyle.Danger),
+        );
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
     await interaction.reply({ content: '🗑️ Closing ticket in 5 seconds...' });
     setTimeout(async () => {
       if (ticket) { ticket.open = false; db.set('tickets', channelId, ticket); }
@@ -243,31 +268,19 @@ async function handleTicketButtons(interaction, client) {
     return;
   }
 
-  // ── VOUCH ─────────────────────────────────────────────────────
-  if (customId.startsWith('ticket_vouch_')) {
-    const channelId = customId.replace('ticket_vouch_', '');
+  // ── FORCE CLOSE (Admin only) ──────────────────────────────────
+  if (customId.startsWith('ticket_forceclose_')) {
+    const channelId = customId.replace('ticket_forceclose_', '');
+    if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ content: '❌ Only admins can force close.', ephemeral: true });
+    }
+
     const ticket = db.get('tickets', channelId);
-
-    if (!ticket) return interaction.reply({ content: '❌ Ticket not found.', ephemeral: true });
-    if (!ticket.carrierId) return interaction.reply({ content: '❌ No carrier has claimed this ticket yet.', ephemeral: true });
-    if (ticket.carrierId === member.id) return interaction.reply({ content: '❌ You cannot vouch yourself.', ephemeral: true });
-    if (ticket.vouchedUsers.includes(member.id)) return interaction.reply({ content: '❌ You already vouched.', ephemeral: true });
-    if (ticket.ownerId !== member.id) return interaction.reply({ content: '❌ Only the ticket creator can vouch.', ephemeral: true });
-
-    ticket.vouchedUsers.push(member.id);
-    db.set('tickets', channelId, ticket);
-
-    const currentRep = db.get('reputation', ticket.carrierId) || 0;
-    const newRep = currentRep + 1;
-    db.set('reputation', ticket.carrierId, newRep);
-
-    const embed = new EmbedBuilder()
-      .setTitle('⭐ Vouch Submitted!')
-      .setDescription(`${member} vouched for <@${ticket.carrierId}>!\n\n**Carrier Reputation:** ⭐ ${newRep} vouch${newRep !== 1 ? 'es' : ''}`)
-      .setColor(0xFEE75C)
-      .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ content: '🔨 Force closing ticket in 5 seconds...' });
+    setTimeout(async () => {
+      if (ticket) { ticket.open = false; db.set('tickets', channelId, ticket); }
+      await interaction.channel.delete().catch(() => {});
+    }, 5000);
     return;
   }
 }

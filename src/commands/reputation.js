@@ -1,11 +1,4 @@
-const {
-  SlashCommandBuilder,
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
-  SeparatorSpacingSize,
-  MessageFlags,
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const db = require('../utils/db');
 
 module.exports = {
@@ -20,27 +13,34 @@ module.exports = {
 
   async execute(interaction) {
     const target = interaction.options.getUser('user') || interaction.user;
-    const rep = db.get('reputation', target.id) || 0;
+    const repData = db.get('reputation_detail', target.id) || { total: 0, vouches: [] };
+    const total = repData.total;
 
-    const stars = rep === 0
-      ? 'No vouches yet'
-      : '⭐'.repeat(Math.min(rep, 10)) + (rep > 10 ? ` +${rep - 10} more` : '');
+    // Average stars
+    const avgStars = total > 0
+      ? (repData.vouches.reduce((sum, v) => sum + v.stars, 0) / total).toFixed(1)
+      : 'N/A';
 
-    const container = new ContainerBuilder()
+    const starDisplay = total === 0 ? 'No vouches yet' : `⭐ ${avgStars}/5 avg (${total} vouch${total !== 1 ? 'es' : ''})`;
 
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(`# 📊 Carrier Reputation\n**Carrier:** <@${target.id}>\n**Total Vouches:** ${rep}\n**Rating:** ${stars}`)
+    // Last 3 vouches
+    const recent = repData.vouches.slice(-3).reverse();
+    const recentText = recent.length > 0
+      ? recent.map(v => `${'⭐'.repeat(v.stars)} — "${v.comment}"\n-# <@${v.from}> • ${new Date(v.date).toDateString()}`).join('\n\n')
+      : 'No recent vouches.';
+
+    const embed = new EmbedBuilder()
+      .setTitle('📊 Carrier Reputation')
+      .setThumbnail(target.displayAvatarURL())
+      .addFields(
+        { name: 'Carrier', value: `<@${target.id}>`, inline: true },
+        { name: 'Rating', value: starDisplay, inline: true },
+        { name: 'Recent Vouches', value: recentText },
       )
-      .addSeparatorComponents(
-        new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
-      )
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent('-# Reputation is earned through vouches in carry tickets.')
-      );
+      .setColor(0xFEE75C)
+      .setFooter({ text: 'Reputation earned through d,vouch in carry tickets' })
+      .setTimestamp();
 
-    await interaction.reply({
-      components: [container],
-      flags: MessageFlags.IsComponentsV2,
-    });
+    await interaction.reply({ embeds: [embed] });
   },
 };
