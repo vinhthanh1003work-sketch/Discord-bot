@@ -51,7 +51,6 @@ async function handleVouchCommand(message, client) {
       '**5** — Excellent\n\n' +
       'Reply with `3` or `5`.'
     )
-    .setColor(0xFEE75C);
 
   await message.reply({ embeds: [embed] });
 }
@@ -77,7 +76,6 @@ async function handleVouchMessage(message, client) {
     const embed = new EmbedBuilder()
       .setTitle('💬 Leave a Comment')
       .setDescription('Share your thoughts about the carrier. What did you like? How was the experience?\n\n*Reply with your comment (max 500 characters).*')
-      .setColor(0xFEE75C);
 
     await message.reply({ embeds: [embed] });
     return;
@@ -165,7 +163,6 @@ async function handleVouchMessage(message, client) {
           `**Rating:** ${starDisplay} (${session.stars}/5)\n` +
           `**Comment:** ${comment}`
         )
-        .setColor(0xFEE75C)
         .setTimestamp();
 
       await transcriptChannel.send({ embeds: [transcriptEmbed], files: [attachment] });

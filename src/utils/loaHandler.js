@@ -98,7 +98,6 @@ async function handleLoaButtons(interaction, client) {
         `**Duration:** ${application.duration}\n\n` +
         `**Approved by:** ${member}`
       )
-      .setColor(0x57F287)
       .setTimestamp();
 
     await interaction.update({ embeds: [embed], components: [] });
@@ -128,7 +127,6 @@ async function handleLoaButtons(interaction, client) {
         `**Duration:** ${application.duration}\n\n` +
         `**Declined by:** ${member}`
       )
-      .setColor(0xED4245)
       .setTimestamp();
 
     await interaction.update({ embeds: [embed], components: [] });
@@ -171,7 +169,6 @@ async function handleLoaModal(interaction, client) {
       `**Reason:** ${reason}\n` +
       `**Duration:** ${duration}`
     )
-    .setColor(0xFEE75C)
     .setTimestamp();
 
   const row = new ActionRowBuilder().addComponents(

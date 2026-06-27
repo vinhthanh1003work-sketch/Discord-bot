@@ -21,7 +21,6 @@ module.exports = {
         '**On Duty** — Set your LFG settings and post your availability.\n' +
         '**End Duty** — Remove your `[LFG]` tag and stop posting.'
       )
-      .setColor(0x57F287);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()

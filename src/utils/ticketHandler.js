@@ -98,7 +98,6 @@ async function handleTicketButtons(interaction, client) {
         `${member} please describe what carry you need!\n\n` +
         `-# Once the carry is done, type \`d,vouch\` to rate your carrier.`
       )
-      .setColor(0x5865F2)
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -243,7 +242,6 @@ async function handleTicketButtons(interaction, client) {
           `Please ask the player to type \`d,vouch\` to rate the carry before closing.\n\n` +
           `-# Admins can close without a vouch if needed.`
         )
-        .setColor(0xFEE75C);
 
       // Admins can still force close
       if (isAdmin) {

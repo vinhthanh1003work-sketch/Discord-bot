@@ -37,7 +37,6 @@ module.exports = {
         { name: 'Rating', value: starDisplay, inline: true },
         { name: 'Recent Vouches', value: recentText },
       )
-      .setColor(0xFEE75C)
       .setFooter({ text: 'Reputation earned through d,vouch in carry tickets' })
       .setTimestamp();
 

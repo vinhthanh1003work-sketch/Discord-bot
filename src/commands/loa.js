@@ -21,7 +21,6 @@ module.exports = {
         'Your request will be reviewed by staff before the tag is applied.\n\n' +
         '**End LOA** — If you are already on LOA and have returned, click below to remove your tag.'
       )
-      .setColor(0xFEE75C);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
